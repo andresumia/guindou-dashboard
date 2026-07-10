@@ -368,11 +368,14 @@ function filtered(){
 function renderKPIs(rows){
   const asig=rows.reduce((a,r)=>a+r.asig,0), aten=rows.reduce((a,r)=>a+r.aten,0),
         pres=rows.filter(r=>r.asis==="Asistente").length, plan=rows.length,
-        pr=rows.filter(r=>r.tprom!=null);
+        pr=rows.filter(r=>r.tprom!=null),
+        medicos=new Set(rows.map(r=>r.nombre)).size, dias=new Set(rows.map(r=>r.fecha)).size;
   const asisPct=plan?(pres/plan*100).toFixed(1).replace(".0","")+"%":"—";
+  const asisSub=plan?(dias<=1?`${pres} de ${plan} presentes`:`promedio de ${dias} días`):"";
   const promAvg=pr.length?(pr.reduce((a,r)=>a+r.tprom,0)/pr.length).toFixed(1).replace(".0","")+" min":"—";
   $("kpis").innerHTML=[
-    ["% Asistencia médicos",asisPct,"p", plan?`${pres} de ${plan} presentes`:""],
+    ["Médicos",fmt(medicos),"",""],
+    ["% Asistencia médicos",asisPct,"p",asisSub],
     ["Pacientes asignados",fmt(asig),"",""],
     ["Pacientes atendidos",fmt(aten),"",""],
     ["% de pacientes atendidos",pct(aten,asig),"p",""],

@@ -153,6 +153,7 @@
   <main class="main">
     <div class="topbar">
       <h1 id="viewTitle">Dashboard Operativo</h1>
+      <button class="btn" id="btnRefresh">↻ Actualizar</button>
     </div>
 
     <div class="filters">
@@ -568,6 +569,7 @@ async function loadCSV(url,silent){
 
 /* ================= EVENTOS ================= */
 $("btnReset").onclick=()=>{F.nom=[];F.gru=[];F.mes=[];F.ano=[];F.dia="";$("fDia").value="";fillFilters();renderAll()};
+$("btnRefresh").onclick=()=>{$("btnRefresh").textContent="↻ Actualizando…";loadCSV(csvURL||DEFAULT_URL,true).then(()=>$("btnRefresh").textContent="↻ Actualizar")};
 $("fDia").addEventListener("change",e=>{F.dia=e.target.value;renderAll()});
 $("qMed").addEventListener("input",()=>renderMedicos(filtered()));
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{

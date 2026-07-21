@@ -147,6 +147,7 @@
     <nav class="nav">
       <button class="on" data-v="operativo"><em>📊 </em>Operativo</button>
       <button data-v="medicos"><em>🩺 </em>Médicos</button>
+      <button data-v="valoraciones"><em>⭐ </em>Valoraciones</button>
     </nav>
   </aside>
 
@@ -156,7 +157,7 @@
       <button class="btn" id="btnRefresh">↻ Actualizar</button>
     </div>
 
-    <div class="filters">
+    <div class="filters" id="opFilters">
       <div class="f"><label>Médico</label><div class="ms" id="fNom"></div></div>
       <div class="f"><label>Grupo</label><div class="ms" id="fGru"></div></div>
       <div class="f"><label>Día</label><input type="date" id="fDia"></div>
@@ -185,6 +186,27 @@
         <div class="scroll"><table id="tMedicos">
           <thead><tr><th data-k="n">Médico</th><th data-k="g">Grupo</th><th data-k="d">Días registrados</th><th data-k="i">Ausencias</th><th data-k="asig">Asignados</th><th data-k="aten">Atendidos</th><th data-k="pctv">% Atención</th><th data-k="tprom">Tiempo prom. consulta</th></tr></thead>
           <tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ============ VISTA VALORACIONES ============ -->
+    <section class="view" id="v-valoraciones">
+      <div class="filters" id="filtersV">
+        <div class="f"><label>Médico</label><div class="ms" id="fvMed"></div></div>
+        <div class="f"><label>Grupo</label><div class="ms" id="fvGru"></div></div>
+        <div class="f"><label>Desde</label><input type="date" id="fvDesde"></div>
+        <div class="f"><label>Hasta</label><input type="date" id="fvHasta"></div>
+        <button class="btn reset" id="btnResetV">⟲ Restablecer</button>
+      </div>
+      <div id="vAlert"></div>
+      <div class="kpis" id="kpisV"></div>
+      <div class="grid">
+        <div class="panel c8"><h3>Nota promedio — diario vs acumulado</h3><div class="chartbox"><canvas id="chVprom"></canvas></div></div>
+        <div class="panel c4"><h3>Nota promedio por grupo</h3><div class="chartbox"><canvas id="chVgrupo"></canvas></div></div>
+        <div class="panel c12"><h3>Ranking de médicos <small>· clic en un médico para ver solo sus citas</small></h3>
+          <div class="scroll"><table id="tVrank"><thead><tr><th>Código</th><th>Médico</th><th>Grupo</th><th># Citas</th><th>Nota prom.</th><th>Duración prom.</th></tr></thead><tbody></tbody></table></div></div>
+        <div class="panel c12"><h3>Detalle de citas <small id="vDetHint"></small></h3>
+          <div class="scroll"><table id="tVdet"><thead><tr><th>Fecha</th><th>Código</th><th>Médico</th><th>ID de cita</th><th>Duración (min)</th><th>Evaluación</th><th>Comentario</th></tr></thead><tbody></tbody></table></div></div>
       </div>
     </section>
   </main>
@@ -306,20 +328,21 @@ const F={nom:[],gru:[],mes:[],ano:[],dia:""}; // arrays = multi-selección; dia 
 const fmt=n=>n.toLocaleString("es-MX");
 const pct=(a,b)=>b?((a/b*100).toFixed(1).replace(".0","")+"%"):"—";
 
-function buildMS(id,key,vals,withSearch){
+function buildMS(id,key,vals,withSearch,state,onChange){
+  state=state||F; onChange=onChange||renderAll;
   const box=$(id);
-  F[key]=F[key].filter(v=>vals.includes(v));           // limpiar selecciones que ya no existen
-  const label=()=>{const a=F[key];
+  state[key]=state[key].filter(v=>vals.includes(v));           // limpiar selecciones que ya no existen
+  const label=()=>{const a=state[key];
     if(!a.length)return"Todos";
     if(a.length===1)return a[0];
     if(a.length===2&&(a[0]+a[1]).length<22)return a.join(" + ");
     return a.length+" seleccionados"};
   box.innerHTML="";
   const btn=document.createElement("button");
-  btn.type="button";btn.className="msbtn"+(F[key].length?" act":"");btn.textContent=label();
+  btn.type="button";btn.className="msbtn"+(state[key].length?" act":"");btn.textContent=label();
   const pan=document.createElement("div");pan.className="msp";
   const clear=document.createElement("button");clear.type="button";clear.className="clear";clear.textContent="✓ Todos (limpiar selección)";
-  clear.onclick=()=>{F[key]=[];pan.querySelectorAll("input").forEach(c=>c.checked=false);btn.textContent=label();btn.classList.remove("act");renderAll()};
+  clear.onclick=()=>{state[key]=[];pan.querySelectorAll("input").forEach(c=>c.checked=false);btn.textContent=label();btn.classList.remove("act");onChange()};
   pan.appendChild(clear);
   let list=pan;
   if(withSearch){
@@ -330,12 +353,12 @@ function buildMS(id,key,vals,withSearch){
   }
   vals.forEach(v=>{
     const l=document.createElement("label");
-    const c=document.createElement("input");c.type="checkbox";c.checked=F[key].includes(v);
+    const c=document.createElement("input");c.type="checkbox";c.checked=state[key].includes(v);
     c.onchange=()=>{
-      if(c.checked){if(!F[key].includes(v))F[key].push(v)}
-      else F[key]=F[key].filter(x=>x!==v);
-      btn.textContent=label();btn.classList.toggle("act",F[key].length>0);
-      renderAll();
+      if(c.checked){if(!state[key].includes(v))state[key].push(v)}
+      else state[key]=state[key].filter(x=>x!==v);
+      btn.textContent=label();btn.classList.toggle("act",state[key].length>0);
+      onChange();
     };
     l.appendChild(c);l.appendChild(document.createTextNode(v));
     list.appendChild(l);
@@ -555,6 +578,7 @@ async function loadCSV(url,silent){
     }
     DATA=rows; LIVE=true; csvURL=url;
     fillFilters(); renderAll();
+    const _idm=url.match(/\/d\/([a-zA-Z0-9_-]{25,})/); if(_idm)loadVal(_idm[1]);
     if(timer)clearInterval(timer);
     timer=setInterval(()=>loadCSV(csvURL,true),5*60*1000);
     $("modal").classList.remove("open");
@@ -567,16 +591,107 @@ async function loadCSV(url,silent){
   }
 }
 
+/* ================= VALORACIONES (calidad) ================= */
+let VAL=[], ROSTER={};
+const FV={med:[],gru:[],desde:"",hasta:""};
+const g2=g=>{const n=parseInt(g);return isNaN(n)?String(g||"").trim():"Grupo "+n};
+function mapRoster(grid){
+  if(!grid||!grid.length)return{};
+  const H=grid[0].map(h=>String(h).toLowerCase());
+  const find=(...k)=>H.findIndex(h=>k.every(x=>h.includes(x)));
+  const iC=find("tca")>=0?find("tca"):find("digo"), iN=find("nombre"), iG=find("grupo"), iS=find("supervisor");
+  const map={};
+  for(let r=1;r<grid.length;r++){const R=grid[r];
+    const c=String(R[iC]||"").trim().toUpperCase(); if(!c)continue;
+    map[c]={grupo:g2(R[iG]), sup:String(R[iS]||"").trim(), nombre:String(R[iN]||"").trim()};
+  }
+  return map;
+}
+function mapVal(grid){
+  if(!grid||!grid.length)return[];
+  const H=grid[0].map(h=>String(h).toLowerCase());
+  const find=(...k)=>H.findIndex(h=>k.every(x=>h.includes(x)));
+  const iF=find("fecha"), iC=find("tca")>=0?find("tca"):find("digo"), iN=find("nombre"),
+        iId=find("id","cita"), iD=find("duraci"), iE=find("evaluaci"), iM=find("comentario");
+  const rows=[];
+  for(let r=1;r<grid.length;r++){const R=grid[r];
+    const fecha=parseDate(R[iF]); if(!fecha)continue;
+    const c=String(R[iC]||"").trim().toUpperCase(); const info=ROSTER[c];
+    rows.push({fecha, cod:c, nombre:String(R[iN]||"").trim(), idc:String(R[iId]||"").trim(),
+      dur:num(R[iD]), ev:num(R[iE]), com:String(R[iM]||"").trim(),
+      grupo:info?info.grupo:"", sup:info?info.sup:"", enR:!!info});
+  }
+  return rows;
+}
+async function loadVal(id){
+  try{
+    ROSTER=mapRoster(await gviz(id,{sheet:"Roaster"}));
+    VAL=mapVal(await gviz(id,{sheet:"Valoraciones"}));
+    fillFiltersV(); renderVal();
+  }catch(e){}
+}
+function fillFiltersV(){
+  buildMS("fvMed","med",[...new Set(VAL.map(r=>r.nombre).filter(Boolean))].sort(),true,FV,renderVal);
+  buildMS("fvGru","gru",[...new Set(VAL.map(r=>r.grupo).filter(Boolean))].sort(),false,FV,renderVal);
+}
+function filteredV(){
+  const inSel=(a,v)=>!a.length||a.includes(v);
+  return VAL.filter(r=>inSel(FV.med,r.nombre)&&inSel(FV.gru,r.grupo)&&
+    (!FV.desde||r.fecha>=FV.desde)&&(!FV.hasta||r.fecha<=FV.hasta));
+}
+function renderVal(){
+  if(!$("kpisV"))return;
+  const rows=filteredV();
+  const ev=rows.filter(r=>r.ev!=null), du=rows.filter(r=>r.dur!=null);
+  const evP=ev.length?(ev.reduce((a,r)=>a+r.ev,0)/ev.length).toFixed(2):"—";
+  const duP=du.length?(du.reduce((a,r)=>a+r.dur,0)/du.length).toFixed(1)+" min":"—";
+  const noR=[...new Map(rows.filter(r=>!r.enR).map(r=>[r.cod+"|"+r.nombre,r])).values()];
+  $("kpisV").innerHTML=[
+    ["Nota promedio",evP,"p"],["Total de citas",fmt(rows.length),""],
+    ["Duración promedio",duP,""],["Médicos sin Roster",fmt(noR.length),noR.length?"p":""]
+  ].map(([t,v,p])=>`<div class="kpi ${p}"><h4>${t}</h4><div class="v">${v}</div><div class="s"></div></div>`).join("");
+  $("vAlert").innerHTML=noR.length?`<div class="syncnote on">⚠️ ${noR.length} médico(s) del export NO están en tu Roster: ${noR.slice(0,25).map(r=>`${r.nombre||"(sin nombre)"} [${r.cod||"sin código"}]`).join(" · ")}${noR.length>25?" …":""}</div>`:"";
+  const days=[...new Set(rows.map(r=>r.fecha))].sort();
+  const byDay=d=>rows.filter(r=>r.fecha===d&&r.ev!=null);
+  const daily=days.map(d=>{const b=byDay(d);return b.length?+(b.reduce((a,r)=>a+r.ev,0)/b.length).toFixed(3):null});
+  let s=0,c=0; const cum=days.map(d=>{byDay(d).forEach(r=>{s+=r.ev;c++});return c?+(s/c).toFixed(3):null});
+  const dl=days.map(d=>d.slice(8,10)+"/"+d.slice(5,7));
+  mk("chVprom",{type:"line",data:{labels:dl,datasets:[
+    {label:"Promedio diario",data:daily,borderColor:PINK,backgroundColor:PINK,tension:.3},
+    {label:"Promedio acumulado",data:cum,borderColor:NAVY,backgroundColor:"rgba(46,79,143,.12)",fill:true,tension:.3}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{grid:{color:"#EEF1F6"}},x:{grid:{display:false}}}}});
+  const grupos=[...new Set(rows.map(r=>r.grupo).filter(Boolean))].sort();
+  mk("chVgrupo",{type:"bar",data:{labels:grupos,datasets:[{label:"Nota prom.",data:grupos.map(g=>{const b=rows.filter(r=>r.grupo===g&&r.ev!=null);return b.length?+(b.reduce((a,r)=>a+r.ev,0)/b.length).toFixed(2):0}),backgroundColor:NAVY,borderRadius:4}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:"#EEF1F6"}},x:{grid:{display:false}}}}});
+  const map={};
+  rows.forEach(r=>{const m=map[r.cod||r.nombre]??={cod:r.cod,nombre:r.nombre,grupo:r.grupo,n:0,eS:0,eN:0,dS:0,dN:0};
+    m.n++; if(r.ev!=null){m.eS+=r.ev;m.eN++} if(r.dur!=null){m.dS+=r.dur;m.dN++}});
+  const list=Object.values(map).sort((a,b)=>(a.eN?a.eS/a.eN:9)-(b.eN?b.eS/b.eN:9));
+  $("tVrank").querySelector("tbody").innerHTML=list.map(m=>
+    `<tr data-med="${encodeURIComponent(m.nombre)}" style="cursor:pointer"><td>${m.cod||"—"}</td><td>${m.nombre}</td><td>${m.grupo||'<span class="tag off">sin Roster</span>'}</td><td>${fmt(m.n)}</td><td>${m.eN?(m.eS/m.eN).toFixed(2):"—"}</td><td>${m.dN?(m.dS/m.dN).toFixed(1)+" min":"—"}</td></tr>`).join("")||`<tr><td colspan="6" style="color:var(--muted)">Sin datos.</td></tr>`;
+  const det=rows.slice().sort((a,b)=>a.fecha<b.fecha?1:-1);
+  $("vDetHint").textContent=det.length>500?`· mostrando 500 de ${fmt(det.length)} — filtra un médico para ver todas`:`· ${fmt(det.length)} citas`;
+  $("tVdet").querySelector("tbody").innerHTML=det.slice(0,500).map(r=>
+    `<tr><td>${r.fecha.split("-").reverse().join("/")}</td><td>${r.cod||"—"}</td><td>${r.nombre}</td><td>${r.idc}</td><td>${r.dur!=null?r.dur:"—"}</td><td>${r.ev!=null?r.ev:"—"}</td><td>${r.com||""}</td></tr>`).join("")||`<tr><td colspan="7" style="color:var(--muted)">Sin citas.</td></tr>`;
+}
+
 /* ================= EVENTOS ================= */
 $("btnReset").onclick=()=>{F.nom=[];F.gru=[];F.mes=[];F.ano=[];F.dia="";$("fDia").value="";fillFilters();renderAll()};
+$("fvDesde").addEventListener("change",e=>{FV.desde=e.target.value;renderVal()});
+$("fvHasta").addEventListener("change",e=>{FV.hasta=e.target.value;renderVal()});
+$("btnResetV").onclick=()=>{FV.med=[];FV.gru=[];FV.desde="";FV.hasta="";$("fvDesde").value="";$("fvHasta").value="";fillFiltersV();renderVal()};
+$("tVrank").querySelector("tbody").addEventListener("click",e=>{const tr=e.target.closest("tr[data-med]");if(tr){FV.med=[decodeURIComponent(tr.dataset.med)];fillFiltersV();renderVal()}});
 $("btnRefresh").onclick=()=>{$("btnRefresh").textContent="↻ Actualizando…";loadCSV(csvURL||DEFAULT_URL,true).then(()=>$("btnRefresh").textContent="↻ Actualizar")};
 $("fDia").addEventListener("change",e=>{F.dia=e.target.value;renderAll()});
 $("qMed").addEventListener("input",()=>renderMedicos(filtered()));
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));
-  $("v-"+b.dataset.v).classList.add("on");
-  $("viewTitle").innerHTML={operativo:'Dashboard Operativo',medicos:'Médicos <span>· resumen del periodo</span>'}[b.dataset.v];
+  const v=b.dataset.v;
+  $("v-"+v).classList.add("on");
+  $("opFilters").style.display=(v==="valoraciones")?"none":"";
+  $("viewTitle").innerHTML={operativo:'Dashboard Operativo',medicos:'Médicos <span>· resumen del periodo</span>',valoraciones:'Valoraciones <span>· calidad por médico</span>'}[v];
+  if(v==="valoraciones")renderVal();
 });
 $("btnCancel").onclick=()=>$("modal").classList.remove("open");
 $("btnGo").onclick=()=>{const u=$("csvUrl").value.trim(); if(u)loadCSV(u)};

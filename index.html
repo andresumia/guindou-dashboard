@@ -191,25 +191,44 @@
 
     <!-- ============ VISTA VALORACIONES ============ -->
     <section class="view" id="v-valoraciones">
-      <div class="kpis" id="kpisV"></div>
-      <div class="grid" style="margin-bottom:14px">
-        <div class="panel c8"><h3>Nota promedio — diario vs acumulado</h3><div class="chartbox"><canvas id="chVprom"></canvas></div></div>
-        <div class="panel c4"><h3>Nota promedio por grupo</h3><div class="chartbox"><canvas id="chVgrupo"></canvas></div></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn pink" id="tgMed">Por médico</button>
+        <button class="btn" id="tgGru">Por grupo</button>
       </div>
       <div class="filters" id="filtersV">
         <div class="f"><label>Médico</label><div class="ms" id="fvMed"></div></div>
         <div class="f"><label>Grupo</label><div class="ms" id="fvGru"></div></div>
         <div class="f"><label>Desde</label><input type="date" id="fvDesde"></div>
         <div class="f"><label>Hasta</label><input type="date" id="fvHasta"></div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;padding-bottom:7px"><input type="checkbox" id="fvCom" style="accent-color:var(--pink);width:15px;height:15px"> Solo con comentario</label>
         <button class="btn reset" id="btnResetV">⟲ Restablecer</button>
       </div>
-      <div id="vAlert"></div>
-      <div id="vEx"></div>
-      <div class="grid">
-        <div class="panel c12"><h3>Ranking de médicos <small>· clic en el nombre para ver sus citas · ✕ para excluir de las métricas · clic en un encabezado para ordenar</small></h3>
-          <div class="scroll"><table id="tVrank"><thead><tr><th data-k="cod">Código</th><th data-k="nombre">Médico</th><th data-k="grupo">Grupo</th><th data-k="n"># Citas</th><th data-k="ev">Nota prom.</th><th data-k="dur">Duración prom.</th><th>Excluir</th></tr></thead><tbody></tbody></table></div></div>
-        <div class="panel c12"><h3>Detalle de citas <small id="vDetHint"></small></h3>
-          <div class="scroll"><table id="tVdet"><thead><tr><th>Fecha</th><th>Código</th><th>Médico</th><th>ID de cita</th><th>Duración (min)</th><th>Evaluación</th><th>Comentario</th></tr></thead><tbody></tbody></table></div></div>
+
+      <!-- ---- POR MÉDICO ---- -->
+      <div id="valMed">
+        <div class="kpis" id="kpisV"></div>
+        <div class="grid" style="margin-bottom:14px">
+          <div class="panel c12"><h3>Nota promedio — diario vs acumulado</h3><div class="chartbox"><canvas id="chVprom"></canvas></div></div>
+        </div>
+        <div id="vAlert"></div>
+        <div id="vEx"></div>
+        <div class="grid">
+          <div class="panel c12"><h3>Ranking de médicos <small>· clic en el nombre para ver sus citas · ✕ para excluir · clic en encabezado para ordenar</small></h3>
+            <div class="scroll"><table id="tVrank"><thead><tr><th data-k="cod">Código</th><th data-k="nombre">Médico</th><th data-k="grupo">Grupo</th><th data-k="n"># Citas</th><th data-k="ev">Nota prom.</th><th data-k="dur">Duración prom.</th><th>Excluir</th></tr></thead><tbody></tbody></table></div></div>
+          <div class="panel c8"><h3>Detalle de citas <small id="vDetHint"></small></h3>
+            <div class="scroll"><table id="tVdet"><thead><tr><th>Fecha</th><th>Código</th><th>Médico</th><th>ID de cita</th><th>Duración (min)</th><th>Evaluación</th><th>Comentario</th></tr></thead><tbody></tbody></table></div></div>
+          <div class="panel c4"><h3>Comentarios <small id="cHint"></small></h3>
+            <div class="scroll" id="cPanel" style="max-height:520px"></div></div>
+        </div>
+      </div>
+
+      <!-- ---- POR GRUPO ---- -->
+      <div id="valGru" style="display:none">
+        <div class="grid">
+          <div class="panel c12"><h3>Comparativa por grupo <small>· conteo de citas por cada nota</small></h3>
+            <div class="scroll"><table id="tGru"><thead><tr><th>Grupo</th><th># Médicos</th><th># Citas</th><th>Nota prom.</th><th>Nota 1</th><th>Nota 2</th><th>Nota 3</th><th>Nota 4</th><th>Nota 5</th><th>Duración prom.</th></tr></thead><tbody></tbody></table></div></div>
+          <div class="panel c12"><h3>Nota promedio por grupo en el tiempo</h3><div class="chartbox"><canvas id="chGtrend"></canvas></div></div>
+        </div>
       </div>
     </section>
   </main>
@@ -596,7 +615,7 @@ async function loadCSV(url,silent){
 
 /* ================= VALORACIONES (calidad) ================= */
 let VAL=[], ROSTER={}, EX={};
-const FV={med:[],gru:[],desde:"",hasta:""};
+const FV={med:[],gru:[],desde:"",hasta:"",com:false,gview:"med"};
 const SV={k:"ev",d:1};
 const g2=g=>{const n=parseInt(g);return isNaN(n)?String(g||"").trim():"Grupo "+n};
 function mapRoster(grid){
@@ -631,17 +650,17 @@ async function loadVal(id){
   try{
     ROSTER=mapRoster(await gviz(id,{sheet:"Roaster"}));
     VAL=mapVal(await gviz(id,{sheet:"Valoraciones"}));
-    fillFiltersV(); renderVal();
+    fillFiltersV(); renderVactive();
   }catch(e){}
 }
 function fillFiltersV(){
-  buildMS("fvMed","med",[...new Set(VAL.map(r=>r.nombre).filter(Boolean))].sort(),true,FV,renderVal);
-  buildMS("fvGru","gru",[...new Set(VAL.map(r=>r.grupo).filter(Boolean))].sort(),false,FV,renderVal);
+  buildMS("fvMed","med",[...new Set(VAL.map(r=>r.nombre).filter(Boolean))].sort(),true,FV,renderVactive);
+  buildMS("fvGru","gru",[...new Set(VAL.map(r=>r.grupo).filter(Boolean))].sort(),false,FV,renderVactive);
 }
 function filteredV(){
   const inSel=(a,v)=>!a.length||a.includes(v);
   return VAL.filter(r=>!EX[r.cod||r.nombre]&&inSel(FV.med,r.nombre)&&inSel(FV.gru,r.grupo)&&
-    (!FV.desde||r.fecha>=FV.desde)&&(!FV.hasta||r.fecha<=FV.hasta));
+    (!FV.desde||r.fecha>=FV.desde)&&(!FV.hasta||r.fecha<=FV.hasta)&&(!FV.com||(r.com&&r.com.trim())));
 }
 function renderVal(){
   if(!$("kpisV"))return;
@@ -651,8 +670,7 @@ function renderVal(){
   const duP=du.length?(du.reduce((a,r)=>a+r.dur,0)/du.length).toFixed(1)+" min":"—";
   const noR=[...new Map(rows.filter(r=>!r.enR).map(r=>[r.cod+"|"+r.nombre,r])).values()];
   $("kpisV").innerHTML=[
-    ["Nota promedio",evP,"p"],["Total de citas",fmt(rows.length),""],
-    ["Duración promedio",duP,""],["Médicos sin Roster",fmt(noR.length),noR.length?"p":""]
+    ["Nota promedio",evP,"p"],["Total de citas",fmt(rows.length),""],["Duración promedio",duP,""]
   ].map(([t,v,p])=>`<div class="kpi ${p}"><h4>${t}</h4><div class="v">${v}</div><div class="s"></div></div>`).join("");
   $("vAlert").innerHTML=noR.length?`<div style="font-size:12px;color:var(--muted);margin:0 0 8px;padding:6px 10px;background:#F5F7FC;border-radius:8px">ℹ️ ${noR.length} médico(s) del export sin match en tu Roster (no cuentan por grupo): ${noR.map(r=>r.nombre||"(sin nombre)").join(", ")}. Puedes excluirlos con ✕ o agregarlos al Roster.</div>`:"";
   $("vEx").innerHTML=Object.keys(EX).length?`<div style="margin:0 0 10px;font-size:12.5px"><b style="color:var(--alert)">Excluidos de las métricas:</b> ${Object.entries(EX).map(([k,nom])=>`<span class="chip" data-unex="${k}" style="cursor:pointer;background:#FBE3E6;color:var(--alert)">${nom} ✕</span>`).join(" ")}</div>`:"";
@@ -665,9 +683,6 @@ function renderVal(){
     {label:"Promedio diario",data:daily,borderColor:PINK,backgroundColor:PINK,tension:.3},
     {label:"Promedio acumulado",data:cum,borderColor:NAVY,backgroundColor:"rgba(46,79,143,.12)",fill:true,tension:.3}]},
     options:{maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{grid:{color:"#EEF1F6"}},x:{grid:{display:false}}}}});
-  const grupos=[...new Set(rows.map(r=>r.grupo).filter(Boolean))].sort();
-  mk("chVgrupo",{type:"bar",data:{labels:grupos,datasets:[{label:"Nota prom.",data:grupos.map(g=>{const b=rows.filter(r=>r.grupo===g&&r.ev!=null);return b.length?+(b.reduce((a,r)=>a+r.ev,0)/b.length).toFixed(2):0}),backgroundColor:NAVY,borderRadius:4}]},
-    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:"#EEF1F6"}},x:{grid:{display:false}}}}});
   const map={};
   rows.forEach(r=>{const m=map[r.cod||r.nombre]??={cod:r.cod,nombre:r.nombre,grupo:r.grupo,n:0,eS:0,eN:0,dS:0,dN:0};
     m.n++; if(r.ev!=null){m.eS+=r.ev;m.eN++} if(r.dur!=null){m.dS+=r.dur;m.dN++}});
@@ -680,13 +695,39 @@ function renderVal(){
   $("vDetHint").textContent=det.length>500?`· mostrando 500 de ${fmt(det.length)} — filtra un médico para ver todas`:`· ${fmt(det.length)} citas`;
   $("tVdet").querySelector("tbody").innerHTML=det.slice(0,500).map(r=>
     `<tr><td>${r.fecha.split("-").reverse().join("/")}</td><td>${r.cod||"—"}</td><td>${r.nombre}</td><td>${r.idc}</td><td>${r.dur!=null?r.dur:"—"}</td><td>${r.ev!=null?r.ev:"—"}</td><td>${r.com||""}</td></tr>`).join("")||`<tr><td colspan="7" style="color:var(--muted)">Sin citas.</td></tr>`;
+  const coms=rows.filter(r=>r.com&&r.com.trim()).sort((a,b)=>a.fecha<b.fecha?1:-1);
+  $("cHint").textContent=`· ${fmt(coms.length)}`;
+  $("cPanel").innerHTML=coms.slice(0,200).map(r=>`<div style="border-bottom:1px solid #F0F2F7;padding:8px 4px"><div style="font-size:11px;color:var(--muted)">${r.fecha.split("-").reverse().join("/")} · ${r.nombre} · <b style="color:${r.ev>=4?'var(--ok)':r.ev>=3?'#B4610E':'var(--alert)'}">★${r.ev!=null?r.ev:"—"}</b></div><div style="font-size:13px;color:var(--ink);margin-top:2px">${r.com}</div></div>`).join("")||`<div style="color:var(--muted);padding:10px">Sin comentarios en el filtro actual.</div>`;
 }
+function renderGru(){
+  if(!$("tGru"))return;
+  const rows=filteredV();
+  const grupos=[...new Set(rows.map(r=>r.grupo).filter(Boolean))].sort();
+  const map={};
+  grupos.forEach(g=>map[g]={meds:new Set(),n:0,eS:0,eN:0,dS:0,dN:0,r:{1:0,2:0,3:0,4:0,5:0}});
+  rows.forEach(r=>{const m=map[r.grupo]; if(!m)return;
+    m.meds.add(r.cod||r.nombre); m.n++;
+    if(r.ev!=null){m.eS+=r.ev;m.eN++; const k=Math.round(r.ev); if(m.r[k]!=null)m.r[k]++}
+    if(r.dur!=null){m.dS+=r.dur;m.dN++}});
+  $("tGru").querySelector("tbody").innerHTML=grupos.map(g=>{const m=map[g];
+    return `<tr><td><b>${g}</b></td><td>${m.meds.size}</td><td>${fmt(m.n)}</td><td>${m.eN?(m.eS/m.eN).toFixed(2):"—"}</td><td>${m.r[1]||""}</td><td>${m.r[2]||""}</td><td>${m.r[3]||""}</td><td>${m.r[4]||""}</td><td>${m.r[5]||""}</td><td>${m.dN?(m.dS/m.dN).toFixed(1)+" min":"—"}</td></tr>`;
+  }).join("")||`<tr><td colspan="10" style="color:var(--muted)">Sin datos.</td></tr>`;
+  const days=[...new Set(rows.map(r=>r.fecha))].sort();
+  const dl=days.map(d=>d.slice(8,10)+"/"+d.slice(5,7));
+  const cols=[NAVY,PINK,"#2E9C6A","#E8842C","#8E44AD","#16A085"];
+  const ds=grupos.map((g,i)=>({label:g,data:days.map(d=>{const b=rows.filter(r=>r.grupo===g&&r.fecha===d&&r.ev!=null);return b.length?+(b.reduce((a,r)=>a+r.ev,0)/b.length).toFixed(3):null}),borderColor:cols[i%cols.length],backgroundColor:cols[i%cols.length],tension:.3,spanGaps:true}));
+  mk("chGtrend",{type:"line",data:{labels:dl,datasets:ds},options:{maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{grid:{color:"#EEF1F6"}},x:{grid:{display:false}}}}});
+}
+function renderVactive(){ if(FV.gview==="gru")renderGru(); else renderVal(); }
 
 /* ================= EVENTOS ================= */
 $("btnReset").onclick=()=>{F.nom=[];F.gru=[];F.mes=[];F.ano=[];F.dia="";$("fDia").value="";fillFilters();renderAll()};
-$("fvDesde").addEventListener("change",e=>{FV.desde=e.target.value;renderVal()});
-$("fvHasta").addEventListener("change",e=>{FV.hasta=e.target.value;renderVal()});
-$("btnResetV").onclick=()=>{FV.med=[];FV.gru=[];FV.desde="";FV.hasta="";$("fvDesde").value="";$("fvHasta").value="";fillFiltersV();renderVal()};
+$("fvDesde").addEventListener("change",e=>{FV.desde=e.target.value;renderVactive()});
+$("fvHasta").addEventListener("change",e=>{FV.hasta=e.target.value;renderVactive()});
+$("fvCom").addEventListener("change",e=>{FV.com=e.target.checked;renderVactive()});
+$("btnResetV").onclick=()=>{FV.med=[];FV.gru=[];FV.desde="";FV.hasta="";FV.com=false;$("fvDesde").value="";$("fvHasta").value="";$("fvCom").checked=false;fillFiltersV();renderVactive()};
+$("tgMed").onclick=()=>{FV.gview="med";$("valMed").style.display="";$("valGru").style.display="none";$("tgMed").className="btn pink";$("tgGru").className="btn";renderVal()};
+$("tgGru").onclick=()=>{FV.gview="gru";$("valMed").style.display="none";$("valGru").style.display="";$("tgGru").className="btn pink";$("tgMed").className="btn";renderGru()};
 $("tVrank").querySelector("tbody").addEventListener("click",e=>{
   const ex=e.target.closest(".exbtn"); if(ex){EX[ex.dataset.ex]=ex.dataset.nom;renderVal();return}
   const tr=e.target.closest("tr[data-med]"); if(tr){FV.med=[decodeURIComponent(tr.dataset.med)];fillFiltersV();renderVal()}
@@ -702,7 +743,7 @@ document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{
   $("v-"+v).classList.add("on");
   $("opFilters").style.display=(v==="valoraciones")?"none":"";
   $("viewTitle").innerHTML={operativo:'Dashboard Operativo',medicos:'Médicos <span>· resumen del periodo</span>',valoraciones:'Valoraciones <span>· calidad por médico</span>'}[v];
-  if(v==="valoraciones")renderVal();
+  if(v==="valoraciones")renderVactive();
 });
 $("btnCancel").onclick=()=>$("modal").classList.remove("open");
 $("btnGo").onclick=()=>{const u=$("csvUrl").value.trim(); if(u)loadCSV(u)};

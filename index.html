@@ -191,6 +191,11 @@
 
     <!-- ============ VISTA VALORACIONES ============ -->
     <section class="view" id="v-valoraciones">
+      <div class="kpis" id="kpisV"></div>
+      <div class="grid" style="margin-bottom:14px">
+        <div class="panel c8"><h3>Nota promedio — diario vs acumulado</h3><div class="chartbox"><canvas id="chVprom"></canvas></div></div>
+        <div class="panel c4"><h3>Nota promedio por grupo</h3><div class="chartbox"><canvas id="chVgrupo"></canvas></div></div>
+      </div>
       <div class="filters" id="filtersV">
         <div class="f"><label>Médico</label><div class="ms" id="fvMed"></div></div>
         <div class="f"><label>Grupo</label><div class="ms" id="fvGru"></div></div>
@@ -199,12 +204,10 @@
         <button class="btn reset" id="btnResetV">⟲ Restablecer</button>
       </div>
       <div id="vAlert"></div>
-      <div class="kpis" id="kpisV"></div>
+      <div id="vEx"></div>
       <div class="grid">
-        <div class="panel c8"><h3>Nota promedio — diario vs acumulado</h3><div class="chartbox"><canvas id="chVprom"></canvas></div></div>
-        <div class="panel c4"><h3>Nota promedio por grupo</h3><div class="chartbox"><canvas id="chVgrupo"></canvas></div></div>
-        <div class="panel c12"><h3>Ranking de médicos <small>· clic en un médico para ver solo sus citas</small></h3>
-          <div class="scroll"><table id="tVrank"><thead><tr><th>Código</th><th>Médico</th><th>Grupo</th><th># Citas</th><th>Nota prom.</th><th>Duración prom.</th></tr></thead><tbody></tbody></table></div></div>
+        <div class="panel c12"><h3>Ranking de médicos <small>· clic en el nombre para ver sus citas · ✕ para excluir de las métricas · clic en un encabezado para ordenar</small></h3>
+          <div class="scroll"><table id="tVrank"><thead><tr><th data-k="cod">Código</th><th data-k="nombre">Médico</th><th data-k="grupo">Grupo</th><th data-k="n"># Citas</th><th data-k="ev">Nota prom.</th><th data-k="dur">Duración prom.</th><th>Excluir</th></tr></thead><tbody></tbody></table></div></div>
         <div class="panel c12"><h3>Detalle de citas <small id="vDetHint"></small></h3>
           <div class="scroll"><table id="tVdet"><thead><tr><th>Fecha</th><th>Código</th><th>Médico</th><th>ID de cita</th><th>Duración (min)</th><th>Evaluación</th><th>Comentario</th></tr></thead><tbody></tbody></table></div></div>
       </div>
@@ -592,8 +595,9 @@ async function loadCSV(url,silent){
 }
 
 /* ================= VALORACIONES (calidad) ================= */
-let VAL=[], ROSTER={};
+let VAL=[], ROSTER={}, EX={};
 const FV={med:[],gru:[],desde:"",hasta:""};
+const SV={k:"ev",d:1};
 const g2=g=>{const n=parseInt(g);return isNaN(n)?String(g||"").trim():"Grupo "+n};
 function mapRoster(grid){
   if(!grid||!grid.length)return{};
@@ -636,7 +640,7 @@ function fillFiltersV(){
 }
 function filteredV(){
   const inSel=(a,v)=>!a.length||a.includes(v);
-  return VAL.filter(r=>inSel(FV.med,r.nombre)&&inSel(FV.gru,r.grupo)&&
+  return VAL.filter(r=>!EX[r.cod||r.nombre]&&inSel(FV.med,r.nombre)&&inSel(FV.gru,r.grupo)&&
     (!FV.desde||r.fecha>=FV.desde)&&(!FV.hasta||r.fecha<=FV.hasta));
 }
 function renderVal(){
@@ -650,7 +654,8 @@ function renderVal(){
     ["Nota promedio",evP,"p"],["Total de citas",fmt(rows.length),""],
     ["Duración promedio",duP,""],["Médicos sin Roster",fmt(noR.length),noR.length?"p":""]
   ].map(([t,v,p])=>`<div class="kpi ${p}"><h4>${t}</h4><div class="v">${v}</div><div class="s"></div></div>`).join("");
-  $("vAlert").innerHTML=noR.length?`<div class="syncnote on">⚠️ ${noR.length} médico(s) del export NO están en tu Roster: ${noR.slice(0,25).map(r=>`${r.nombre||"(sin nombre)"} [${r.cod||"sin código"}]`).join(" · ")}${noR.length>25?" …":""}</div>`:"";
+  $("vAlert").innerHTML=noR.length?`<div style="font-size:12px;color:var(--muted);margin:0 0 8px;padding:6px 10px;background:#F5F7FC;border-radius:8px">ℹ️ ${noR.length} médico(s) del export sin match en tu Roster (no cuentan por grupo): ${noR.map(r=>r.nombre||"(sin nombre)").join(", ")}. Puedes excluirlos con ✕ o agregarlos al Roster.</div>`:"";
+  $("vEx").innerHTML=Object.keys(EX).length?`<div style="margin:0 0 10px;font-size:12.5px"><b style="color:var(--alert)">Excluidos de las métricas:</b> ${Object.entries(EX).map(([k,nom])=>`<span class="chip" data-unex="${k}" style="cursor:pointer;background:#FBE3E6;color:var(--alert)">${nom} ✕</span>`).join(" ")}</div>`:"";
   const days=[...new Set(rows.map(r=>r.fecha))].sort();
   const byDay=d=>rows.filter(r=>r.fecha===d&&r.ev!=null);
   const daily=days.map(d=>{const b=byDay(d);return b.length?+(b.reduce((a,r)=>a+r.ev,0)/b.length).toFixed(3):null});
@@ -666,9 +671,11 @@ function renderVal(){
   const map={};
   rows.forEach(r=>{const m=map[r.cod||r.nombre]??={cod:r.cod,nombre:r.nombre,grupo:r.grupo,n:0,eS:0,eN:0,dS:0,dN:0};
     m.n++; if(r.ev!=null){m.eS+=r.ev;m.eN++} if(r.dur!=null){m.dS+=r.dur;m.dN++}});
-  const list=Object.values(map).sort((a,b)=>(a.eN?a.eS/a.eN:9)-(b.eN?b.eS/b.eN:9));
+  const accV={cod:m=>m.cod,nombre:m=>m.nombre,grupo:m=>m.grupo,n:m=>m.n,ev:m=>m.eN?m.eS/m.eN:null,dur:m=>m.dN?m.dS/m.dN:null}[SV.k];
+  const list=Object.values(map).sort((a,b)=>cmpVals(accV(a),accV(b),SV.d));
   $("tVrank").querySelector("tbody").innerHTML=list.map(m=>
-    `<tr data-med="${encodeURIComponent(m.nombre)}" style="cursor:pointer"><td>${m.cod||"—"}</td><td>${m.nombre}</td><td>${m.grupo||'<span class="tag off">sin Roster</span>'}</td><td>${fmt(m.n)}</td><td>${m.eN?(m.eS/m.eN).toFixed(2):"—"}</td><td>${m.dN?(m.dS/m.dN).toFixed(1)+" min":"—"}</td></tr>`).join("")||`<tr><td colspan="6" style="color:var(--muted)">Sin datos.</td></tr>`;
+    `<tr data-med="${encodeURIComponent(m.nombre)}" style="cursor:pointer"><td>${m.cod||"—"}</td><td>${m.nombre}</td><td>${m.grupo||'<span class="tag off">sin Roster</span>'}</td><td>${fmt(m.n)}</td><td>${m.eN?(m.eS/m.eN).toFixed(2):"—"}</td><td>${m.dN?(m.dS/m.dN).toFixed(1)+" min":"—"}</td><td><button class="exbtn" data-ex="${m.cod||m.nombre}" data-nom="${(m.nombre||'').replace(/"/g,'')}" style="border:none;background:#FBE3E6;color:var(--alert);border-radius:6px;padding:2px 9px;cursor:pointer;font-weight:700">✕</button></td></tr>`).join("")||`<tr><td colspan="7" style="color:var(--muted)">Sin datos.</td></tr>`;
+  updateArrows("tVrank",SV);
   const det=rows.slice().sort((a,b)=>a.fecha<b.fecha?1:-1);
   $("vDetHint").textContent=det.length>500?`· mostrando 500 de ${fmt(det.length)} — filtra un médico para ver todas`:`· ${fmt(det.length)} citas`;
   $("tVdet").querySelector("tbody").innerHTML=det.slice(0,500).map(r=>
@@ -680,7 +687,11 @@ $("btnReset").onclick=()=>{F.nom=[];F.gru=[];F.mes=[];F.ano=[];F.dia="";$("fDia"
 $("fvDesde").addEventListener("change",e=>{FV.desde=e.target.value;renderVal()});
 $("fvHasta").addEventListener("change",e=>{FV.hasta=e.target.value;renderVal()});
 $("btnResetV").onclick=()=>{FV.med=[];FV.gru=[];FV.desde="";FV.hasta="";$("fvDesde").value="";$("fvHasta").value="";fillFiltersV();renderVal()};
-$("tVrank").querySelector("tbody").addEventListener("click",e=>{const tr=e.target.closest("tr[data-med]");if(tr){FV.med=[decodeURIComponent(tr.dataset.med)];fillFiltersV();renderVal()}});
+$("tVrank").querySelector("tbody").addEventListener("click",e=>{
+  const ex=e.target.closest(".exbtn"); if(ex){EX[ex.dataset.ex]=ex.dataset.nom;renderVal();return}
+  const tr=e.target.closest("tr[data-med]"); if(tr){FV.med=[decodeURIComponent(tr.dataset.med)];fillFiltersV();renderVal()}
+});
+$("vEx").addEventListener("click",e=>{const c=e.target.closest("[data-unex]");if(c){delete EX[c.dataset.unex];renderVal()}});
 $("btnRefresh").onclick=()=>{$("btnRefresh").textContent="↻ Actualizando…";loadCSV(csvURL||DEFAULT_URL,true).then(()=>$("btnRefresh").textContent="↻ Actualizar")};
 $("fDia").addEventListener("change",e=>{F.dia=e.target.value;renderAll()});
 $("qMed").addEventListener("input",()=>renderMedicos(filtered()));
@@ -699,6 +710,7 @@ $("csvUrl").addEventListener("keydown",e=>{if(e.key==="Enter")$("btnGo").click()
 
 /* init */
 bindSort("tMedicos",SORT.med,()=>renderMedicos(filtered()));
+bindSort("tVrank",SV,renderVal);
 fillFilters(); renderAll();
 
 /* conexión automática al Sheets de DoctorSV */
